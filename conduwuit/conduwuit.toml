@@ -1,0 +1,54 @@
+# Conduwuit 配置文件
+# 参考: https://conduwuit.puppyirl.gay/configuration.html
+# 此配置用于本地开发测试
+
+[global]
+# 服务器域名
+server_name = "localhost"
+
+# 数据库路径 (RocksDB, 内嵌无需额外安装)
+database_path = "${PROJECT_ROOT}/data/conduwuit/"
+
+# 监听地址与端口
+address = "127.0.0.1"
+port = 6167
+
+# 允许注册 (开发测试环境)
+allow_registration = true
+registration_token = "matrix_dev_registration_token_2026"
+
+# 允许 federation (本地测试可以关闭)
+allow_federation = false
+
+# 允许不加密的连接 (本地开发用)
+allow_local_presence = true
+
+# 日志级别
+log = "info"
+
+# 最大请求大小 (默认 20MB, 根据需要调整)
+max_request_size = 20971520
+
+# 信任的代理 (Nginx 反向代理)
+trusted_servers = ["matrix.org"]
+
+# 允许创建房间别名
+allow_room_creation = true
+
+# 媒体存储
+# media_path 默认在 database_path 下
+
+# Appservice 注册文件路径
+# 启用 bridge 后取消注释并添加路径
+# appservice_registrations = [
+#     "${PROJECT_ROOT}/bridges/mautrix-telegram/registration.yaml",
+#     "${PROJECT_ROOT}/bridges/mautrix-discord/registration.yaml",
+#     "${PROJECT_ROOT}/bridges/mautrix-whatsapp/registration.yaml",
+#     "${PROJECT_ROOT}/bridges/mautrix-slack/registration.yaml",
+#     "${PROJECT_ROOT}/bridges/mautrix-signal/registration.yaml",
+#     "${PROJECT_ROOT}/bridges/mautrix-gmessages/registration.yaml",
+# ]
+
+[global.well_known]
+client = "http://localhost:6167"
+server = "localhost:6167"

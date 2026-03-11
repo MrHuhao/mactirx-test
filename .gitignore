@@ -1,0 +1,37 @@
+# 忽略环境变量文件
+.env
+
+# 忽略运行时数据
+data/
+logs/
+*.log
+*.pid
+
+# 忽略克隆的源码
+source/
+
+# 忽略生成的配置中的敏感信息
+bridges/*/registration.yaml
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Go
+*.exe
+
+# Rust
+target/
+
+# Node
+node_modules/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
