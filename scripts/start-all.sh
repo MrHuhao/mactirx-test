@@ -3,8 +3,6 @@
 # 启动所有 Matrix 服务
 # ============================================
 
-set -e
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -103,7 +101,7 @@ fi
 
 if [ -n "$CONDUWUIT_BIN" ]; then
     export CONDUWUIT_CONFIG="$CONDUWUIT_RUNTIME_CONFIG"
-    start_service "conduwuit" "CONDUWUIT_CONFIG='$CONDUWUIT_RUNTIME_CONFIG' '$CONDUWUIT_BIN'"
+    start_service "conduwuit" "env CONDUWUIT_CONFIG='$CONDUWUIT_RUNTIME_CONFIG' '$CONDUWUIT_BIN'"
 else
     print_fail "Conduwuit 二进制未找到, 请先运行 build-all.sh"
 fi

@@ -37,6 +37,13 @@ print_header "1/4 构建 Conduwuit (Rust Homeserver)"
 
 if [ -d "$SOURCE_DIR/conduwuit" ]; then
     cd "$SOURCE_DIR/conduwuit"
+    
+    # 确保 cargo 使用系统 git CLI (避免认证问题)
+    mkdir -p .cargo
+    if [ ! -f .cargo/config.toml ] || ! grep -q 'git-fetch-with-cli' .cargo/config.toml 2>/dev/null; then
+        echo -e '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml
+    fi
+    
     echo "  编译中... (首次编译可能需要 5-15 分钟)"
     if cargo build --release 2>&1 | tail -5; then
         CONDUWUIT_BIN="$SOURCE_DIR/conduwuit/target/release/conduwuit"
@@ -67,6 +74,15 @@ fi
 # 2. 构建 Go Bridges
 # ============================================
 print_header "2/4 构建 Go Bridges"
+
+# 设置 CGO 环境变量让 Go 找到 libolm (Homebrew)
+if [ -d "/opt/homebrew/include" ]; then
+    export CGO_CFLAGS="-I/opt/homebrew/include"
+    export CGO_LDFLAGS="-L/opt/homebrew/lib"
+elif [ -d "/usr/local/include" ]; then
+    export CGO_CFLAGS="-I/usr/local/include"
+    export CGO_LDFLAGS="-L/usr/local/lib"
+fi
 
 build_go_bridge() {
     local bridge_name="$1"
@@ -124,6 +140,10 @@ if [ -d "$TELEGRAM_DIR" ]; then
     echo "  安装依赖..."
     source venv/bin/activate
     pip install --upgrade pip 2>&1 | tail -1
+    
+    # 先安装 cmake (python-olm 需要)
+    pip install cmake 2>&1 | tail -1
+    
     if pip install -e ".[all]" 2>&1 | tail -5; then
         print_ok "mautrix-telegram 依赖安装成功"
         SUCCEEDED+=("mautrix-telegram")
@@ -152,17 +172,32 @@ ELEMENT_DIR="$SOURCE_DIR/element-web"
 if [ -d "$ELEMENT_DIR" ]; then
     cd "$ELEMENT_DIR"
 
-    echo "  安装依赖..."
-    if yarn install 2>&1 | tail -3; then
+    # Element Web 现在使用 pnpm，通过 corepack 管理
+    echo "  启用 corepack & 安装依赖..."
+    corepack enable 2>/dev/null || true
+    
+    # 检查 package.json 中的 packageManager 来决定用什么
+    if grep -q '"pnpm@' package.json 2>/dev/null; then
+        PKG_MGR="pnpm"
+        # 确保 pnpm 可用
+        corepack prepare pnpm@latest --activate 2>/dev/null || npm install -g pnpm 2>/dev/null || true
+    elif grep -q '"yarn@' package.json 2>/dev/null; then
+        PKG_MGR="yarn"
+    else
+        PKG_MGR="yarn"
+    fi
+    
+    echo "  使用 $PKG_MGR 安装依赖..."
+    if $PKG_MGR install 2>&1 | tail -5; then
         # 复制自定义配置
         cp "$PROJECT_ROOT/element-web/config.json" "$ELEMENT_DIR/config.json"
 
         echo "  构建中... (可能需要 2-5 分钟)"
-        if yarn build 2>&1 | tail -5; then
+        if $PKG_MGR run build 2>&1 | tail -5; then
             print_ok "Element Web 构建成功"
             SUCCEEDED+=("element-web")
         else
-            print_fail "Element Web 构建失败"
+            print_warn "Element Web 构建失败, 尝试 dev 模式可用"
             FAILED+=("element-web")
         fi
     else

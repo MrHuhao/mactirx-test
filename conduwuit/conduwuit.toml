@@ -39,15 +39,9 @@ allow_room_creation = true
 # media_path 默认在 database_path 下
 
 # Appservice 注册文件路径
-# 启用 bridge 后取消注释并添加路径
-# appservice_registrations = [
-#     "${PROJECT_ROOT}/bridges/mautrix-telegram/registration.yaml",
-#     "${PROJECT_ROOT}/bridges/mautrix-discord/registration.yaml",
-#     "${PROJECT_ROOT}/bridges/mautrix-whatsapp/registration.yaml",
-#     "${PROJECT_ROOT}/bridges/mautrix-slack/registration.yaml",
-#     "${PROJECT_ROOT}/bridges/mautrix-signal/registration.yaml",
-#     "${PROJECT_ROOT}/bridges/mautrix-gmessages/registration.yaml",
-# ]
+# 注意: continuwuity v0.5.5 通过 admin 命令注册 appservice
+# 启动后在 admin room 使用:
+# !admin appservice register < registration.yaml
 
 [global.well_known]
 client = "http://localhost:6167"

@@ -43,7 +43,7 @@ echo ""
 
 # ---- Conduwuit (Rust Homeserver) ----
 print_header "1. Conduwuit - Rust Matrix Homeserver"
-clone_repo "https://github.com/conduwuit/conduwuit.git" "$SOURCE_DIR/conduwuit"
+clone_repo "https://github.com/girlbossceo/conduwuit.git" "$SOURCE_DIR/conduwuit"
 
 # ---- Element Web (客户端) ----
 print_header "2. Element Web - Matrix 网页客户端"
@@ -72,6 +72,10 @@ clone_repo "https://github.com/mautrix/signal.git" "$SOURCE_DIR/mautrix-signal"
 # ---- mautrix-gmessages (Go bridge) ----
 print_header "8. mautrix-gmessages - Google Messages Bridge"
 clone_repo "https://github.com/mautrix/gmessages.git" "$SOURCE_DIR/mautrix-gmessages"
+
+# ---- Chatwoot (客服系统) ----
+print_header "9. Chatwoot - 开源客服平台"
+clone_repo "https://github.com/chatwoot/chatwoot.git" "$SOURCE_DIR/chatwoot"
 
 # ---- 完成 ----
 print_header "克隆完成"
