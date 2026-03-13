@@ -1,0 +1,804 @@
+openapi: 3.0.3
+info:
+  title: Matrix Client-Server API
+  description: |
+    Matrix Client-Server API 的常用端点文档，用于本地开发环境。
+    Homeserver 为 Conduwuit，运行在 localhost:6167。
+  version: 1.11.0
+  contact:
+    name: Mactirx 本地开发环境
+
+servers:
+  - url: http://localhost:6167
+    description: 本地 Conduwuit homeserver
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Authentication
+    description: 登录、注册与会话管理
+  - name: Rooms
+    description: 房间操作
+  - name: Messages
+    description: 消息发送与读取
+  - name: Profile
+    description: 用户资料
+  - name: Media
+    description: 媒体上传
+
+paths:
+  /_matrix/client/v3/login:
+    post:
+      tags: [Authentication]
+      summary: 密码登录
+      description: 使用用户名和密码登录，获取 access_token。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, identifier, password]
+              properties:
+                type:
+                  type: string
+                  enum: [m.login.password]
+                identifier:
+                  type: object
+                  required: [type, user]
+                  properties:
+                    type:
+                      type: string
+                      enum: [m.id.user]
+                    user:
+                      type: string
+                      description: 用户 localpart 或完整 Matrix ID
+                password:
+                  type: string
+            example:
+              type: m.login.password
+              identifier:
+                type: m.id.user
+                user: admin
+              password: admin_password
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                user_id: "@admin:localhost"
+                access_token: "C2seZDqk1OrBIjnMizBIyJnLv5xmPxRf"
+                device_id: "ABCDEFGHIJ"
+                home_server: "localhost"
+        '401':
+          description: 认证失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+              example:
+                errcode: M_FORBIDDEN
+                error: Invalid username or password
+
+  /_matrix/client/v3/register:
+    post:
+      tags: [Authentication]
+      summary: 注册新用户
+      description: |
+        使用注册令牌注册新用户。需要进行 User-Interactive Authentication (UIA) 流程。
+        注册令牌: `matrix_dev_registration_token_2026`
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, auth]
+              properties:
+                username:
+                  type: string
+                  description: 期望的用户名 (localpart)
+                password:
+                  type: string
+                  description: 密码
+                auth:
+                  type: object
+                  description: UIA 认证数据
+                  properties:
+                    type:
+                      type: string
+                      enum: [m.login.registration_token]
+                    token:
+                      type: string
+                    session:
+                      type: string
+                      description: 从 401 UIA 响应中获取的 session ID
+            example:
+              username: newuser
+              password: securepassword123
+              auth:
+                type: m.login.registration_token
+                token: matrix_dev_registration_token_2026
+                session: "xxxxxxxx"
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: 需要进行交互式认证 (UIA)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    type: string
+                  flows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        stages:
+                          type: array
+                          items:
+                            type: string
+              example:
+                session: "xxxxxxxx"
+                flows:
+                  - stages: [m.login.registration_token]
+        '400':
+          description: 请求无效 (如用户名已占用)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/sync:
+    get:
+      tags: [Messages]
+      summary: 同步事件 (长轮询)
+      description: |
+        从服务器获取新事件。支持长轮询 — 如果没有新事件，服务器会等待 timeout 毫秒后返回。
+      parameters:
+        - name: since
+          in: query
+          description: 上次同步返回的 next_batch token
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: 长轮询超时 (毫秒)
+          schema:
+            type: integer
+            default: 30000
+        - name: filter
+          in: query
+          description: 过滤器 ID 或 JSON 过滤器
+          schema:
+            type: string
+        - name: full_state
+          in: query
+          description: 是否返回完整状态
+          schema:
+            type: boolean
+            default: false
+        - name: set_presence
+          in: query
+          description: 设置在线状态
+          schema:
+            type: string
+            enum: [offline, online, unavailable]
+      responses:
+        '200':
+          description: 同步成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  next_batch:
+                    type: string
+                    description: 用于下次 /sync 请求的 token
+                  rooms:
+                    type: object
+                    properties:
+                      join:
+                        type: object
+                        additionalProperties:
+                          $ref: '#/components/schemas/JoinedRoom'
+                      invite:
+                        type: object
+                        additionalProperties:
+                          type: object
+                      leave:
+                        type: object
+                        additionalProperties:
+                          type: object
+
+  /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}:
+    put:
+      tags: [Messages]
+      summary: 发送消息事件
+      description: 向房间发送一个消息事件 (如文本消息、图片等)。
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          description: 房间 ID
+          schema:
+            type: string
+          example: "!roomid:localhost"
+        - name: eventType
+          in: path
+          required: true
+          description: 事件类型
+          schema:
+            type: string
+          example: m.room.message
+        - name: txnId
+          in: path
+          required: true
+          description: 客户端生成的事务 ID (用于幂等性去重)
+          schema:
+            type: string
+          example: "txn_001"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                msgtype:
+                  type: string
+                  enum: [m.text, m.image, m.file, m.audio, m.video, m.notice, m.emote]
+                body:
+                  type: string
+                format:
+                  type: string
+                  description: 格式化类型 (如 org.matrix.custom.html)
+                formatted_body:
+                  type: string
+                  description: 格式化后的内容 (HTML)
+                url:
+                  type: string
+                  description: mxc:// URI (用于媒体消息)
+            example:
+              msgtype: m.text
+              body: Hello, Matrix!
+      responses:
+        '200':
+          description: 消息发送成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+              example:
+                event_id: "$eventid:localhost"
+        '403':
+          description: 无权在该房间发送消息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/rooms/{roomId}/messages:
+    get:
+      tags: [Messages]
+      summary: 获取房间消息 (分页)
+      description: 获取房间中的历史消息，支持向前或向后分页。
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          description: 房间 ID
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: true
+          description: 分页 token (从 /sync 或上次 /messages 获取)
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: 结束分页 token
+          schema:
+            type: string
+        - name: dir
+          in: query
+          required: true
+          description: 分页方向 (b=向后/历史, f=向前/未来)
+          schema:
+            type: string
+            enum: [b, f]
+        - name: limit
+          in: query
+          description: 最大返回事件数
+          schema:
+            type: integer
+            default: 10
+        - name: filter
+          in: query
+          description: JSON 过滤器
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 消息列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  start:
+                    type: string
+                  end:
+                    type: string
+                  chunk:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MatrixEvent'
+        '403':
+          description: 无权访问该房间
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/createRoom:
+    post:
+      tags: [Rooms]
+      summary: 创建房间
+      description: 创建一个新房间。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 房间名称
+                topic:
+                  type: string
+                  description: 房间话题
+                room_alias_name:
+                  type: string
+                  description: 房间别名 (localpart)
+                visibility:
+                  type: string
+                  enum: [public, private]
+                  default: private
+                preset:
+                  type: string
+                  enum: [private_chat, public_chat, trusted_private_chat]
+                invite:
+                  type: array
+                  items:
+                    type: string
+                  description: 邀请的用户 Matrix ID 列表
+                is_direct:
+                  type: boolean
+                  description: 是否为私聊
+            example:
+              name: "测试房间"
+              topic: "这是一个测试房间"
+              visibility: private
+              preset: private_chat
+      responses:
+        '200':
+          description: 房间创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+              example:
+                room_id: "!newroomid:localhost"
+
+  /_matrix/client/v3/join/{roomIdOrAlias}:
+    post:
+      tags: [Rooms]
+      summary: 加入房间
+      description: 通过房间 ID 或别名加入房间。
+      parameters:
+        - name: roomIdOrAlias
+          in: path
+          required: true
+          description: 房间 ID 或别名
+          schema:
+            type: string
+          example: "#test:localhost"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: 加入原因
+      responses:
+        '200':
+          description: 成功加入房间
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+              example:
+                room_id: "!roomid:localhost"
+        '403':
+          description: 无权加入该房间
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/joined_rooms:
+    get:
+      tags: [Rooms]
+      summary: 获取已加入的房间列表
+      description: 返回当前用户已加入的所有房间 ID。
+      responses:
+        '200':
+          description: 已加入的房间列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  joined_rooms:
+                    type: array
+                    items:
+                      type: string
+              example:
+                joined_rooms:
+                  - "!room1:localhost"
+                  - "!room2:localhost"
+
+  /_matrix/client/v3/profile/{userId}:
+    get:
+      tags: [Profile]
+      summary: 获取用户资料
+      description: 获取指定用户的显示名称和头像。
+      security: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: 用户的 Matrix ID
+          schema:
+            type: string
+          example: "@admin:localhost"
+      responses:
+        '200':
+          description: 用户资料
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  displayname:
+                    type: string
+                  avatar_url:
+                    type: string
+                    description: mxc:// URI
+              example:
+                displayname: Admin
+                avatar_url: "mxc://localhost/abc123"
+        '404':
+          description: 用户不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/profile/{userId}/displayname:
+    put:
+      tags: [Profile]
+      summary: 设置显示名称
+      description: 设置当前用户的显示名称。只能修改自己的显示名称。
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: 用户的 Matrix ID
+          schema:
+            type: string
+          example: "@admin:localhost"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayname]
+              properties:
+                displayname:
+                  type: string
+            example:
+              displayname: "新显示名称"
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          description: 无权修改该用户资料
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/profile/{userId}/avatar_url:
+    put:
+      tags: [Profile]
+      summary: 设置头像 URL
+      description: 设置当前用户的头像。需要先通过 /upload 上传图片获取 mxc:// URI。
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: 用户的 Matrix ID
+          schema:
+            type: string
+          example: "@admin:localhost"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [avatar_url]
+              properties:
+                avatar_url:
+                  type: string
+                  description: mxc:// URI
+            example:
+              avatar_url: "mxc://localhost/abc123"
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          description: 无权修改该用户资料
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/logout:
+    post:
+      tags: [Authentication]
+      summary: 登出
+      description: 使当前 access_token 失效。
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/account/whoami:
+    get:
+      tags: [Authentication]
+      summary: 获取当前用户信息
+      description: 返回当前 access_token 对应的用户 ID 和设备 ID。
+      responses:
+        '200':
+          description: 当前用户信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                  device_id:
+                    type: string
+                  is_guest:
+                    type: boolean
+              example:
+                user_id: "@admin:localhost"
+                device_id: "ABCDEFGHIJ"
+                is_guest: false
+        '401':
+          description: access_token 无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+              example:
+                errcode: M_UNKNOWN_TOKEN
+                error: Unknown token
+
+  /_matrix/media/v3/upload:
+    post:
+      tags: [Media]
+      summary: 上传媒体文件
+      description: |
+        上传文件到 homeserver 的媒体仓库，返回 mxc:// URI。
+        上传的文件可用于头像、图片消息等。
+      parameters:
+        - name: Content-Type
+          in: header
+          required: true
+          description: 文件的 MIME 类型
+          schema:
+            type: string
+          example: image/png
+        - name: filename
+          in: query
+          description: 文件名
+          schema:
+            type: string
+          example: avatar.png
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content_uri:
+                    type: string
+                    description: mxc:// URI
+              example:
+                content_uri: "mxc://localhost/abc123def456"
+        '413':
+          description: 文件太大
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+              example:
+                errcode: M_TOO_LARGE
+                error: Content too large
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        使用 /login 获取的 access_token。
+        格式: `Authorization: Bearer <access_token>`
+
+  schemas:
+    LoginResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: 完整的 Matrix 用户 ID
+        access_token:
+          type: string
+          description: 用于后续 API 请求的令牌
+        device_id:
+          type: string
+          description: 设备 ID
+        home_server:
+          type: string
+          description: Homeserver 域名
+
+    MatrixError:
+      type: object
+      required: [errcode, error]
+      properties:
+        errcode:
+          type: string
+          description: Matrix 错误码
+          enum:
+            - M_FORBIDDEN
+            - M_UNKNOWN_TOKEN
+            - M_MISSING_TOKEN
+            - M_BAD_JSON
+            - M_NOT_JSON
+            - M_NOT_FOUND
+            - M_LIMIT_EXCEEDED
+            - M_UNKNOWN
+            - M_UNRECOGNIZED
+            - M_UNAUTHORIZED
+            - M_USER_IN_USE
+            - M_INVALID_USERNAME
+            - M_ROOM_IN_USE
+            - M_EXCLUSIVE
+            - M_TOO_LARGE
+        error:
+          type: string
+          description: 人类可读的错误描述
+
+    MatrixEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        type:
+          type: string
+        sender:
+          type: string
+        origin_server_ts:
+          type: integer
+          format: int64
+          description: 时间戳 (毫秒)
+        content:
+          type: object
+          additionalProperties: true
+        room_id:
+          type: string
+
+    JoinedRoom:
+      type: object
+      properties:
+        timeline:
+          type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/MatrixEvent'
+            prev_batch:
+              type: string
+            limited:
+              type: boolean
+        state:
+          type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/MatrixEvent'
+        ephemeral:
+          type: object
+          properties:
+            events:
+              type: array
+              items:
+                type: object
+        account_data:
+          type: object
+          properties:
+            events:
+              type: array
+              items:
+                type: object
+        unread_notifications:
+          type: object
+          properties:
+            highlight_count:
+              type: integer
+            notification_count:
+              type: integer

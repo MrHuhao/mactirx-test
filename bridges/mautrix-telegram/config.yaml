@@ -51,10 +51,6 @@ appservice:
     database_opts:
         min_size: 1
         max_size: 10
-
-    # Public part of web server for out-of-Matrix interaction with the bridge.
-    # Used for things like login if the user wants to make sure the 2FA password isn't stored in
-    # the HS database.
     public:
         # Whether or not the public-facing endpoints should be enabled.
         enabled: false
@@ -108,8 +104,6 @@ manhole:
     # If empty, any UIDs can be specified in the open-manhole command.
     whitelist:
     - 0
-
-# Bridge config
 bridge:
     # Localpart template of MXIDs for Telegram users.
     # {userid} is replaced with the user ID of the Telegram user.
@@ -139,7 +133,6 @@ bridge:
     - full name
     - username
     - phone number
-    # Maximum length of displayname
     displayname_max_length: 100
     # Remove avatars from Telegram ghost users when removed on Telegram. This is disabled by default
     # as there's no way to determine whether an avatar is removed or just hidden from some users. If
@@ -199,7 +192,6 @@ bridge:
     # Servers to always allow double puppeting from
     double_puppet_server_map:
         example.com: https://example.com
-    # Allow using double puppeting from any server with a valid client .well-known file.
     double_puppet_allow_discovery: false
     # Shared secrets for https://github.com/devture/matrix-synapse-shared-secret-auth
     #
@@ -210,7 +202,6 @@ bridge:
     # you must also set the URL in the double_puppet_server_map.
     login_shared_secret_map:
         example.com: foobar
-    # Set to false to disable link previews in messages sent to Telegram.
     telegram_link_preview: true
     # Whether or not the !tg join command should do a HTTP request
     # to resolve redirects in invite links.
@@ -574,12 +565,10 @@ bridge:
         whitelist:
         - myusername
         - 12345678
-
-# Telegram config
 telegram:
     # Get your own API keys at https://my.telegram.org/apps
-    api_id: your_api_id
-    api_hash: your_api_hash
+    api_id: 33979729
+    api_hash: 2831776e2f432c9ad86a4959c8ff1fed
     # (Optional) Create your own bot at https://t.me/BotFather
     bot_token: disabled
 

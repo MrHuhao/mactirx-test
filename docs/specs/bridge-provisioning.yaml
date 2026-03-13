@@ -1,0 +1,1344 @@
+openapi: 3.0.3
+info:
+  title: Bridge Provisioning API
+  description: |
+    Mautrix 桥接器 Provisioning API 文档，涵盖所有 6 个桥接器。
+    每个桥接器运行在独立端口上，提供各自的 provisioning 端点用于登录、管理联系人和聊天等操作。
+
+    **认证方式:** 所有请求需在 `Authorization` 头中携带 Bearer token (shared secret)。
+    同时需要在查询参数或 JSON body 中提供 `user_id` (Matrix 用户 ID) 来标识操作的用户。
+  version: 0.1.0
+  contact:
+    name: Mactirx 本地开发环境
+
+servers:
+  - url: http://localhost:29318
+    description: mautrix-discord
+  - url: http://localhost:29317
+    description: mautrix-telegram
+  - url: http://localhost:29319
+    description: mautrix-whatsapp
+  - url: http://localhost:29320
+    description: mautrix-slack
+  - url: http://localhost:29321
+    description: mautrix-signal
+  - url: http://localhost:29322
+    description: mautrix-gmessages
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Discord
+    description: Discord 桥接器 (端口 29318)
+  - name: WhatsApp
+    description: WhatsApp 桥接器 (端口 29319)
+  - name: Signal
+    description: Signal 桥接器 (端口 29321)
+  - name: Slack
+    description: Slack 桥接器 (端口 29320)
+  - name: Google Messages
+    description: Google Messages 桥接器 (端口 29322)
+  - name: Telegram
+    description: Telegram 桥接器 (端口 29317)
+
+paths:
+  # ============================================================
+  # Discord endpoints
+  # ============================================================
+  /_matrix/provision/v1/ping:
+    get:
+      tags: [Discord, Slack]
+      summary: Ping 桥接器
+      description: 检查桥接器是否在线及用户登录状态。
+      parameters:
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '200':
+          description: 桥接器在线
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mxid:
+                    type: string
+                    description: Matrix 用户 ID
+                  remote_id:
+                    type: string
+                    description: 远程平台用户 ID (如已登录)
+                  remote_name:
+                    type: string
+                    description: 远程平台用户名 (如已登录)
+                  management_room:
+                    type: string
+                    description: 管理房间 ID
+              example:
+                mxid: "@user:localhost"
+                remote_id: "123456789"
+                remote_name: "DiscordUser#1234"
+                management_room: "!mgmt:localhost"
+
+  /_matrix/provision/v1/disconnect:
+    post:
+      tags: [Discord]
+      summary: 断开 Discord 连接
+      description: 断开与 Discord 的连接但不登出 (可以重新连接)。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 断开成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
+  /_matrix/provision/v1/reconnect:
+    post:
+      tags: [Discord]
+      summary: 重新连接 Discord
+      description: 重新连接之前断开的 Discord 连接。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 重新连接成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
+  /_matrix/provision/v1/login/qr:
+    get:
+      tags: [Discord]
+      summary: QR 码登录 (WebSocket)
+      description: |
+        通过 WebSocket 进行 Discord QR 码登录。
+        连接后服务器会发送 QR 码数据，客户端用 Discord 移动端扫描。
+
+        **这是 WebSocket 端点**，需要使用 WebSocket 客户端连接。
+      parameters:
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '101':
+          description: WebSocket 升级成功
+          content:
+            application/json:
+              schema:
+                type: object
+                description: WebSocket 消息格式
+                properties:
+                  code:
+                    type: string
+                    description: QR 码内容
+                  timeout:
+                    type: integer
+                    description: QR 码过期时间 (秒)
+              example:
+                code: "https://discord.com/ra/qr_code_data"
+                timeout: 120
+
+  /_matrix/provision/v1/login/token:
+    post:
+      tags: [Discord]
+      summary: Token 登录
+      description: 使用 Discord 用户 token 登录。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, token]
+              properties:
+                user_id:
+                  type: string
+                  description: Matrix 用户 ID
+                token:
+                  type: string
+                  description: Discord 用户 token
+            example:
+              user_id: "@user:localhost"
+              token: "discord_user_token_here"
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  remote_id:
+                    type: string
+                  remote_name:
+                    type: string
+              example:
+                success: true
+                remote_id: "123456789"
+                remote_name: "DiscordUser#1234"
+        '401':
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+              example:
+                errcode: FI.MAU.DISCORD.AUTH_FAILED
+                error: "Invalid Discord token"
+
+  /_matrix/provision/v1/logout:
+    post:
+      tags: [Discord, Slack]
+      summary: 登出
+      description: 从远程平台登出并断开连接。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+        '404':
+          description: 用户未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v1/guilds:
+    get:
+      tags: [Discord]
+      summary: 获取 Guild 列表
+      description: 获取已登录 Discord 用户的服务器 (Guild) 列表。
+      parameters:
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '200':
+          description: Guild 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DiscordGuild'
+              example:
+                - id: "123456789012345678"
+                  name: "My Server"
+                  icon: "abc123"
+                  bridged: false
+                - id: "987654321098765432"
+                  name: "Another Server"
+                  icon: "def456"
+                  bridged: true
+
+  /_matrix/provision/v1/guilds/{guildID}:
+    post:
+      tags: [Discord]
+      summary: 桥接 Guild
+      description: 将 Discord Guild 桥接到 Matrix，为每个频道创建对应的 Matrix 房间。
+      parameters:
+        - name: guildID
+          in: path
+          required: true
+          description: Discord Guild ID
+          schema:
+            type: string
+          example: "123456789012345678"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 桥接成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  room_id:
+                    type: string
+              example:
+                success: true
+                room_id: "!guildspace:localhost"
+        '409':
+          description: Guild 已桥接
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+              example:
+                errcode: FI.MAU.DISCORD.GUILD_ALREADY_BRIDGED
+                error: "This guild is already bridged"
+    delete:
+      tags: [Discord]
+      summary: 取消桥接 Guild
+      description: 移除 Discord Guild 的桥接。
+      parameters:
+        - name: guildID
+          in: path
+          required: true
+          description: Discord Guild ID
+          schema:
+            type: string
+          example: "123456789012345678"
+      responses:
+        '200':
+          description: 取消桥接成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+        '404':
+          description: Guild 未桥接
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  # ============================================================
+  # WhatsApp endpoints
+  # ============================================================
+  /_matrix/provision/v1/contacts:
+    get:
+      tags: [WhatsApp]
+      summary: 获取 WhatsApp 联系人
+      description: 获取已登录 WhatsApp 用户的联系人列表。
+      parameters:
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '200':
+          description: 联系人列表
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/WhatsAppContact'
+              example:
+                "1234567890@s.whatsapp.net":
+                  jid: "1234567890@s.whatsapp.net"
+                  name: "John Doe"
+                  notify: "John"
+                  found: true
+    post:
+      tags: [Google Messages]
+      summary: 获取 Google Messages 联系人
+      description: 获取 Google Messages 联系人列表。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 联系人列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    phone:
+                      type: string
+
+  /_matrix/provision/v1/resolve_identifier/{number}:
+    get:
+      tags: [WhatsApp]
+      summary: 解析 WhatsApp 号码
+      description: 检查手机号码是否注册了 WhatsApp 并获取对应的 Matrix puppet。
+      parameters:
+        - name: number
+          in: path
+          required: true
+          description: 手机号码 (国际格式，不含+号)
+          schema:
+            type: string
+          example: "1234567890"
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '200':
+          description: 号码解析成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jid:
+                    type: string
+                  mxid:
+                    type: string
+                    description: 对应的 Matrix puppet 用户 ID
+                  name:
+                    type: string
+                  just_created:
+                    type: boolean
+              example:
+                jid: "1234567890@s.whatsapp.net"
+                mxid: "@whatsapp_1234567890:localhost"
+                name: "John Doe"
+                just_created: false
+        '404':
+          description: 号码未在 WhatsApp 注册
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v1/pm/{number}:
+    post:
+      tags: [WhatsApp]
+      summary: 发起 WhatsApp 私聊
+      description: 创建或获取与指定手机号码的 Matrix 私聊房间。
+      parameters:
+        - name: number
+          in: path
+          required: true
+          description: 手机号码 (国际格式)
+          schema:
+            type: string
+          example: "1234567890"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 私聊房间创建/获取成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+                  just_created:
+                    type: boolean
+              example:
+                room_id: "!whatsappchat:localhost"
+                just_created: true
+
+  # ============================================================
+  # Signal endpoints
+  # ============================================================
+  /_matrix/provision/v2/resolve_identifier/{phonenum}:
+    get:
+      tags: [Signal]
+      summary: 解析 Signal 号码
+      description: 检查手机号码是否注册了 Signal。
+      parameters:
+        - name: phonenum
+          in: path
+          required: true
+          description: 手机号码 (国际格式)
+          schema:
+            type: string
+          example: "+1234567890"
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '200':
+          description: 号码解析成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mxid:
+                    type: string
+                  uuid:
+                    type: string
+                  number:
+                    type: string
+                  name:
+                    type: string
+              example:
+                mxid: "@signal_uuid123:localhost"
+                uuid: "abcd-1234-efgh-5678"
+                number: "+1234567890"
+                name: "John Doe"
+        '404':
+          description: 号码未在 Signal 注册
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v2/pm/{phonenum}:
+    post:
+      tags: [Signal]
+      summary: 发起 Signal 私聊
+      description: 创建或获取与指定手机号码的 Matrix 私聊房间。
+      parameters:
+        - name: phonenum
+          in: path
+          required: true
+          description: 手机号码 (国际格式)
+          schema:
+            type: string
+          example: "+1234567890"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 私聊房间创建/获取成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+                  just_created:
+                    type: boolean
+              example:
+                room_id: "!signalchat:localhost"
+                just_created: true
+
+  # ============================================================
+  # Slack endpoints
+  # ============================================================
+  /_matrix/provision/v1/login:
+    post:
+      tags: [Slack]
+      summary: Slack 登录
+      description: 使用 Slack token 登录。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, token]
+              properties:
+                user_id:
+                  type: string
+                  description: Matrix 用户 ID
+                token:
+                  type: string
+                  description: Slack 用户 token (xoxc-...)
+                cookie_token:
+                  type: string
+                  description: Slack cookie token (xoxd-...)
+            example:
+              user_id: "@user:localhost"
+              token: "xoxc-..."
+              cookie_token: "xoxd-..."
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  team_id:
+                    type: string
+                  team_name:
+                    type: string
+                  user_id:
+                    type: string
+                  user_name:
+                    type: string
+              example:
+                success: true
+                team_id: "T01234567"
+                team_name: "My Workspace"
+                user_id: "U01234567"
+                user_name: "johndoe"
+        '401':
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  # ============================================================
+  # Google Messages endpoints
+  # ============================================================
+  /_matrix/provision/v1/start_chat:
+    post:
+      tags: [Google Messages]
+      summary: 发起 Google Messages 聊天
+      description: 创建或获取与指定手机号码的 Matrix 私聊房间。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, numbers]
+              properties:
+                user_id:
+                  type: string
+                  description: Matrix 用户 ID
+                numbers:
+                  type: array
+                  items:
+                    type: string
+                  description: 手机号码列表
+            example:
+              user_id: "@user:localhost"
+              numbers: ["+1234567890"]
+      responses:
+        '200':
+          description: 聊天创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+              example:
+                room_id: "!gmsgchat:localhost"
+
+  # ============================================================
+  # Telegram endpoints
+  # ============================================================
+  /_matrix/provision/v1/bridge:
+    get:
+      tags: [Telegram]
+      summary: 获取桥接器信息
+      description: 获取 Telegram 桥接器的基本信息和状态。
+      responses:
+        '200':
+          description: 桥接器信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relaybot_username:
+                    type: string
+                  bridge_bot_username:
+                    type: string
+              example:
+                relaybot_username: ""
+                bridge_bot_username: "telegrambot"
+
+  /_matrix/provision/v1/portal/{room_id}:
+    get:
+      tags: [Telegram]
+      summary: 获取 Portal 房间信息
+      description: 获取 Telegram portal 房间的信息。
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          description: Matrix 房间 ID
+          schema:
+            type: string
+          example: "!portalroom:localhost"
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '200':
+          description: Portal 信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mxid:
+                    type: string
+                  tgid:
+                    type: integer
+                  peer_type:
+                    type: string
+                    enum: [user, chat, channel]
+                  title:
+                    type: string
+                  about:
+                    type: string
+                  can_unbridge:
+                    type: boolean
+              example:
+                mxid: "!portalroom:localhost"
+                tgid: -1001234567890
+                peer_type: "channel"
+                title: "Telegram Channel"
+                about: "A test channel"
+                can_unbridge: true
+        '404':
+          description: 该房间不是 portal 房间
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v1/portal/{room_id}/connect/{chat_id}:
+    post:
+      tags: [Telegram]
+      summary: 连接 Portal 到 Telegram 聊天
+      description: 将 Matrix 房间连接到 Telegram 聊天/频道。
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          description: Matrix 房间 ID
+          schema:
+            type: string
+        - name: chat_id
+          in: path
+          required: true
+          description: Telegram 聊天 ID
+          schema:
+            type: string
+          example: "-1001234567890"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 连接成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+        '409':
+          description: 房间已连接
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v1/portal/{room_id}/create:
+    post:
+      tags: [Telegram]
+      summary: 创建 Portal
+      description: 为 Matrix 房间创建对应的 Telegram 群组/频道。
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          description: Matrix 房间 ID
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: Portal 创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tgid:
+                    type: integer
+              example:
+                tgid: -1001234567890
+
+  /_matrix/provision/v1/portal/{room_id}/disconnect:
+    post:
+      tags: [Telegram]
+      summary: 断开 Portal 连接
+      description: 断开 Matrix 房间与 Telegram 聊天的连接。
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          description: Matrix 房间 ID
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 断开成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
+  /_matrix/provision/v1/user/{user_id}:
+    get:
+      tags: [Telegram]
+      summary: 获取 Telegram 用户信息
+      description: 获取指定 Matrix 用户在 Telegram 的登录状态和信息。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+          example: "@user:localhost"
+      responses:
+        '200':
+          description: 用户信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mxid:
+                    type: string
+                  tgid:
+                    type: integer
+                  tg_username:
+                    type: string
+                  tg_phone:
+                    type: string
+                  logged_in:
+                    type: boolean
+              example:
+                mxid: "@user:localhost"
+                tgid: 123456789
+                tg_username: "telegram_user"
+                tg_phone: "+1234567890"
+                logged_in: true
+
+  /_matrix/provision/v1/user/{user_id}/chats:
+    get:
+      tags: [Telegram]
+      summary: 获取 Telegram 聊天列表
+      description: 获取用户的 Telegram 聊天/对话列表。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 聊天列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    title:
+                      type: string
+
+  /_matrix/provision/v1/user/{user_id}/contacts:
+    get:
+      tags: [Telegram]
+      summary: 获取 Telegram 联系人
+      description: 获取用户的 Telegram 联系人列表。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 联系人列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    username:
+                      type: string
+                    first_name:
+                      type: string
+                    last_name:
+                      type: string
+                    phone:
+                      type: string
+
+  /_matrix/provision/v1/user/{user_id}/resolve_identifier/{identifier}:
+    get:
+      tags: [Telegram]
+      summary: 解析 Telegram 标识符
+      description: 通过用户名或手机号码查找 Telegram 用户。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+        - name: identifier
+          in: path
+          required: true
+          description: Telegram 用户名或手机号码
+          schema:
+            type: string
+          example: "telegram_user"
+      responses:
+        '200':
+          description: 用户信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  username:
+                    type: string
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                  mxid:
+                    type: string
+              example:
+                id: 123456789
+                username: "telegram_user"
+                first_name: "John"
+                last_name: "Doe"
+                mxid: "@telegram_123456789:localhost"
+        '404':
+          description: 用户未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v1/user/{user_id}/pm/{identifier}:
+    post:
+      tags: [Telegram]
+      summary: 发起 Telegram 私聊
+      description: 创建或获取与指定 Telegram 用户的 Matrix 私聊房间。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+        - name: identifier
+          in: path
+          required: true
+          description: Telegram 用户名或 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 私聊房间
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+                  just_created:
+                    type: boolean
+              example:
+                room_id: "!tgpm:localhost"
+                just_created: true
+
+  /_matrix/provision/v1/user/{user_id}/logout:
+    post:
+      tags: [Telegram]
+      summary: Telegram 登出
+      description: 从 Telegram 登出。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
+  /_matrix/provision/v1/user/{user_id}/login/qr:
+    get:
+      tags: [Telegram]
+      summary: Telegram QR 码登录 (WebSocket)
+      description: |
+        通过 WebSocket 进行 Telegram QR 码登录。
+        连接后服务器发送 QR 码数据供 Telegram 移动端扫描。
+
+        **这是 WebSocket 端点。**
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      responses:
+        '101':
+          description: WebSocket 升级
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  timeout:
+                    type: integer
+
+  /_matrix/provision/v1/user/{user_id}/login/bot_token:
+    post:
+      tags: [Telegram]
+      summary: Bot Token 登录
+      description: 使用 Telegram Bot Token 登录。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: Telegram Bot Token (从 @BotFather 获取)
+            example:
+              token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+              example:
+                success: true
+        '401':
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v1/user/{user_id}/login/request_code:
+    post:
+      tags: [Telegram]
+      summary: 请求登录验证码
+      description: 请求发送 Telegram 登录验证码到手机。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+                  description: 手机号码 (国际格式)
+            example:
+              phone: "+1234567890"
+      responses:
+        '200':
+          description: 验证码已发送
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phone_code_hash:
+                    type: string
+                    description: 验证码 hash (后续步骤需要)
+              example:
+                phone_code_hash: "abc123def456"
+
+  /_matrix/provision/v1/user/{user_id}/login/send_code:
+    post:
+      tags: [Telegram]
+      summary: 提交登录验证码
+      description: 提交通过短信/Telegram 收到的验证码。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code, phone_code_hash]
+              properties:
+                phone:
+                  type: string
+                code:
+                  type: integer
+                  description: 收到的验证码
+                phone_code_hash:
+                  type: string
+                  description: 从 request_code 获取的 hash
+            example:
+              phone: "+1234567890"
+              code: 12345
+              phone_code_hash: "abc123def456"
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+              example:
+                success: true
+        '202':
+          description: 需要两步验证密码
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [two_factor]
+              example:
+                status: "two_factor"
+
+  /_matrix/provision/v1/user/{user_id}/login/send_password:
+    post:
+      tags: [Telegram]
+      summary: 提交两步验证密码
+      description: 提交 Telegram 两步验证密码 (如果启用了两步验证)。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  description: 两步验证密码
+            example:
+              password: "my_2fa_password"
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+              example:
+                success: true
+        '401':
+          description: 密码错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeError'
+
+  /_matrix/provision/v1/user/{user_id}/stickersets:
+    get:
+      tags: [Telegram]
+      summary: 获取贴纸包列表
+      description: 获取 Telegram 用户的贴纸包列表。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 贴纸包列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    title:
+                      type: string
+                    short_name:
+                      type: string
+                    count:
+                      type: integer
+                    is_animated:
+                      type: boolean
+
+  /_matrix/provision/v1/user/{user_id}/retry_takeout:
+    post:
+      tags: [Telegram]
+      summary: 重试 Takeout 会话
+      description: 重试创建 Telegram Takeout 会话 (用于数据导出/回填)。
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Matrix 用户 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Takeout 会话已重试
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        使用桥接器配置中的 provisioning shared secret 作为 Bearer token。
+        格式: `Authorization: Bearer <shared_secret>`
+
+  parameters:
+    UserIdQuery:
+      name: user_id
+      in: query
+      required: true
+      description: Matrix 用户 ID
+      schema:
+        type: string
+      example: "@user:localhost"
+
+  schemas:
+    UserIdBody:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          type: string
+          description: Matrix 用户 ID
+      example:
+        user_id: "@user:localhost"
+
+    EmptySuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: true
+      example:
+        success: true
+
+    BridgeError:
+      type: object
+      required: [errcode, error]
+      properties:
+        errcode:
+          type: string
+          description: |
+            错误码。不同桥接器使用不同的错误码前缀:
+            - Discord: `FI.MAU.DISCORD.*`
+            - 通用: `M_*`
+
+            **Discord 错误码:**
+            - `FI.MAU.DISCORD.AUTH_FAILED` — 认证失败
+            - `FI.MAU.DISCORD.GUILD_ALREADY_BRIDGED` — Guild 已桥接
+            - `FI.MAU.DISCORD.NOT_LOGGED_IN` — 未登录
+            - `FI.MAU.DISCORD.UNKNOWN_GUILD` — 未知 Guild
+        error:
+          type: string
+          description: 人类可读的错误描述
+
+    DiscordGuild:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Discord Guild ID
+        name:
+          type: string
+          description: Guild 名称
+        icon:
+          type: string
+          description: Guild 图标 hash
+        bridged:
+          type: boolean
+          description: 是否已桥接到 Matrix
+
+    WhatsAppContact:
+      type: object
+      properties:
+        jid:
+          type: string
+          description: WhatsApp JID
+        name:
+          type: string
+          description: 联系人名称
+        notify:
+          type: string
+          description: 推送通知名称
+        found:
+          type: boolean
+          description: 是否在 WhatsApp 上找到

@@ -1,0 +1,321 @@
+openapi: 3.0.3
+info:
+  title: Conduwuit Admin API
+  description: |
+    Conduwuit 管理员 API 文档。
+
+    Conduwuit 的管理操作通过向管理员房间发送特殊格式的 Matrix 消息来执行。
+    所有管理命令以 `!admin` 为前缀，通过标准 Matrix Client-Server API 发送到管理员房间。
+
+    **管理员房间:** `!MebIyXpRdL0lTTqNVT:localhost`
+
+    **使用流程:**
+    1. 使用管理员账户的 access_token 认证
+    2. 向管理员房间发送 `m.room.message` 事件，body 为管理命令
+    3. 从管理员房间读取服务器的响应消息
+  version: 0.5.0
+  contact:
+    name: Mactirx 本地开发环境
+
+servers:
+  - url: http://localhost:6167
+    description: 本地 Conduwuit homeserver
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Admin Commands
+    description: 通过 Matrix 消息发送管理命令
+  - name: Appservices
+    description: Application Service 管理
+  - name: Rooms Management
+    description: 房间管理
+  - name: Users Management
+    description: 用户管理
+  - name: Server
+    description: 服务器信息与操作
+
+paths:
+  /_matrix/client/v3/rooms/{roomId}/send/m.room.message/{txnId}:
+    put:
+      tags: [Admin Commands]
+      summary: 发送管理命令
+      description: |
+        向管理员房间发送管理命令。命令格式为 `!admin <子命令> [参数]`。
+
+        管理员房间 ID: `!MebIyXpRdL0lTTqNVT:localhost`
+
+        **常用命令列表:**
+        - `!admin --help` — 显示所有可用命令
+        - `!admin appservices list-registered` — 列出已注册的 appservice
+        - `!admin appservices register` — 注册 appservice (附带 YAML)
+        - `!admin appservices unregister <name>` — 注销 appservice
+        - `!admin rooms list` — 列出房间
+        - `!admin users list` — 列出用户
+        - `!admin server info` — 服务器信息
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          description: 管理员房间 ID
+          schema:
+            type: string
+          example: "!MebIyXpRdL0lTTqNVT:localhost"
+        - name: txnId
+          in: path
+          required: true
+          description: 客户端事务 ID (唯一字符串，用于幂等)
+          schema:
+            type: string
+          example: "admin_cmd_001"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCommandMessage'
+            examples:
+              help:
+                summary: 显示帮助
+                value:
+                  msgtype: m.text
+                  body: "!admin --help"
+              list_appservices:
+                summary: 列出已注册的 appservice
+                value:
+                  msgtype: m.text
+                  body: "!admin appservices list-registered"
+              register_appservice:
+                summary: 注册 appservice
+                description: |
+                  注册一个 appservice。YAML 配置以代码块形式附在命令后面。
+                value:
+                  msgtype: m.text
+                  body: "!admin appservices register\n```yaml\nid: mautrix-discord\nurl: http://localhost:29318\nas_token: as_token_value\nhs_token: hs_token_value\nsender_localpart: discordbot\nnamespaces:\n  users:\n    - regex: '@discord_.*:localhost'\n      exclusive: true\n  aliases:\n    - regex: '#discord_.*:localhost'\n      exclusive: true\n```"
+              unregister_appservice:
+                summary: 注销 appservice
+                value:
+                  msgtype: m.text
+                  body: "!admin appservices unregister mautrix-discord"
+              list_rooms:
+                summary: 列出房间
+                value:
+                  msgtype: m.text
+                  body: "!admin rooms list"
+              list_users:
+                summary: 列出用户
+                value:
+                  msgtype: m.text
+                  body: "!admin users list"
+              server_info:
+                summary: 服务器信息
+                value:
+                  msgtype: m.text
+                  body: "!admin server info"
+      responses:
+        '200':
+          description: 命令已发送
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+                    description: 发送的事件 ID
+              example:
+                event_id: "$cmd_event:localhost"
+        '403':
+          description: 无管理员权限
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+              example:
+                errcode: M_FORBIDDEN
+                error: You are not an admin
+
+  /_matrix/client/v3/rooms/{roomId}/messages:
+    get:
+      tags: [Admin Commands]
+      summary: 读取管理命令响应
+      description: |
+        从管理员房间获取消息，读取服务器对管理命令的响应。
+        发送管理命令后，服务器会在管理员房间中回复执行结果。
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          description: 管理员房间 ID
+          schema:
+            type: string
+          example: "!MebIyXpRdL0lTTqNVT:localhost"
+        - name: from
+          in: query
+          required: true
+          description: 分页 token (从 /sync 获取)
+          schema:
+            type: string
+        - name: dir
+          in: query
+          required: true
+          description: 分页方向 (b=向后)
+          schema:
+            type: string
+            enum: [b, f]
+            default: b
+        - name: limit
+          in: query
+          description: 返回的最大消息数
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: 消息列表 (包含管理命令响应)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  start:
+                    type: string
+                  end:
+                    type: string
+                  chunk:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminResponseEvent'
+              example:
+                start: "t47409-4357353_219380_26003_2265"
+                end: "t47409-4357353_219380_26003_2260"
+                chunk:
+                  - event_id: "$response:localhost"
+                    type: m.room.message
+                    sender: "@conduit:localhost"
+                    origin_server_ts: 1710000000000
+                    content:
+                      msgtype: m.notice
+                      body: |
+                        Registered appservices:
+                        - mautrix-discord
+                        - mautrix-telegram
+                        - mautrix-whatsapp
+                        - mautrix-signal
+                        - mautrix-slack
+                        - mautrix-gmessages
+
+  /_matrix/client/v3/sync:
+    get:
+      tags: [Admin Commands]
+      summary: 同步获取管理响应
+      description: |
+        也可以通过 /sync 端点来获取管理员房间的新消息。
+        使用 filter 参数只获取管理员房间的事件。
+      parameters:
+        - name: since
+          in: query
+          description: 上次 /sync 的 next_batch
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: 长轮询超时 (毫秒)
+          schema:
+            type: integer
+            default: 5000
+        - name: filter
+          in: query
+          description: |
+            JSON 过滤器，限定管理员房间。
+            示例: `{"room":{"rooms":["!MebIyXpRdL0lTTqNVT:localhost"]}}`
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 同步响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  next_batch:
+                    type: string
+                  rooms:
+                    type: object
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        管理员用户的 access_token。
+        管理员 token: `C2seZDqk1OrBIjnMizBIyJnLv5xmPxRf`
+        格式: `Authorization: Bearer C2seZDqk1OrBIjnMizBIyJnLv5xmPxRf`
+
+  schemas:
+    AdminCommandMessage:
+      type: object
+      required: [msgtype, body]
+      properties:
+        msgtype:
+          type: string
+          enum: [m.text]
+          description: 消息类型，固定为 m.text
+        body:
+          type: string
+          description: |
+            管理命令文本。必须以 `!admin` 开头。
+
+            **Appservice 命令:**
+            - `!admin appservices register` + YAML 代码块
+            - `!admin appservices unregister <name>`
+            - `!admin appservices list-registered`
+
+            **房间命令:**
+            - `!admin rooms list`
+
+            **用户命令:**
+            - `!admin users list`
+
+            **服务器命令:**
+            - `!admin server info`
+
+            **帮助:**
+            - `!admin --help`
+
+    AdminResponseEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        type:
+          type: string
+          enum: [m.room.message]
+        sender:
+          type: string
+          description: 服务器 bot 用户 (如 @conduit:localhost)
+        origin_server_ts:
+          type: integer
+          format: int64
+        content:
+          type: object
+          properties:
+            msgtype:
+              type: string
+              enum: [m.notice]
+              description: 服务器响应使用 m.notice 类型
+            body:
+              type: string
+              description: 命令执行结果文本
+
+    MatrixError:
+      type: object
+      required: [errcode, error]
+      properties:
+        errcode:
+          type: string
+        error:
+          type: string
