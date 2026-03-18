@@ -35,8 +35,15 @@ tags:
     description: 用户管理
   - name: Server
     description: 服务器信息与操作
+  - name: Federation
+    description: 联邦测试与调试
+  - name: Media Management
+    description: 媒体管理
 
 paths:
+  # ============================================================
+  # 管理命令 (通过 Matrix 消息)
+  # ============================================================
   /_matrix/client/v3/rooms/{roomId}/send/m.room.message/{txnId}:
     put:
       tags: [Admin Commands]
@@ -245,6 +252,459 @@ paths:
                   rooms:
                     type: object
 
+  # ============================================================
+  # 用户管理命令 (详细)
+  # ============================================================
+  /_conduwuit/admin/v1/users:
+    get:
+      tags: [Users Management]
+      summary: 列出所有用户
+      description: 通过消息命令 `!admin users list` 也可执行。此为等效 REST 描述。
+      responses:
+        '200':
+          description: 用户列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    user_id:
+                      type: string
+                    displayname:
+                      type: string
+                    is_admin:
+                      type: boolean
+
+  /_conduwuit/admin/v1/users/{userId}/deactivate:
+    post:
+      tags: [Users Management]
+      summary: 停用用户
+      description: |
+        等效命令: `!admin users deactivate <user_id>`
+        停用后用户无法登录，但数据保留。
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "@baduser:localhost"
+      responses:
+        '200':
+          description: 停用成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /_conduwuit/admin/v1/users/{userId}/reset_password:
+    post:
+      tags: [Users Management]
+      summary: 重置用户密码
+      description: |
+        等效命令: `!admin users reset-password <user_id>`
+        为指定用户设置新密码。
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+      responses:
+        '200':
+          description: 密码已重置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /_conduwuit/admin/v1/users/{userId}/make_admin:
+    post:
+      tags: [Users Management]
+      summary: 设置/取消管理员权限
+      description: |
+        等效命令: `!admin users make-admin <user_id>` / `!admin users unmake-admin <user_id>`
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                admin:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: 权限已更改
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # 房间管理命令 (详细)
+  # ============================================================
+  /_conduwuit/admin/v1/rooms:
+    get:
+      tags: [Rooms Management]
+      summary: 列出所有房间
+      description: |
+        等效命令: `!admin rooms list`
+        返回服务器上所有房间。
+      responses:
+        '200':
+          description: 房间列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    room_id:
+                      type: string
+                    name:
+                      type: string
+                    topic:
+                      type: string
+                    members:
+                      type: integer
+                    version:
+                      type: string
+
+  /_conduwuit/admin/v1/rooms/{roomId}/alias:
+    get:
+      tags: [Rooms Management]
+      summary: 获取房间别名
+      description: 等效命令: `!admin rooms alias list <room_id>`
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 别名列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /_conduwuit/admin/v1/rooms/{roomId}/directory:
+    put:
+      tags: [Rooms Management]
+      summary: 设置房间公开目录可见性
+      description: 等效命令: `!admin rooms directory publish <room_id>`
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                visibility:
+                  type: string
+                  enum: [public, private]
+      responses:
+        '200':
+          description: 可见性已更新
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # Appservice 管理
+  # ============================================================
+  /_conduwuit/admin/v1/appservices:
+    get:
+      tags: [Appservices]
+      summary: 列出已注册的 Appservice
+      description: 等效命令: `!admin appservices list-registered`
+      responses:
+        '200':
+          description: Appservice 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    url:
+                      type: string
+                    sender_localpart:
+                      type: string
+              example:
+                - id: mautrix-discord
+                  url: "http://localhost:29318"
+                  sender_localpart: discordbot
+                - id: mautrix-telegram
+                  url: "http://localhost:29317"
+                  sender_localpart: telegrambot
+
+  /_conduwuit/admin/v1/appservices/register:
+    post:
+      tags: [Appservices]
+      summary: 注册 Appservice
+      description: |
+        等效命令: `!admin appservices register` + YAML 代码块。
+        上传 appservice registration YAML 进行注册。
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              type: string
+            example: |
+              id: mautrix-discord
+              url: http://localhost:29318
+              as_token: as_token_value
+              hs_token: hs_token_value
+              sender_localpart: discordbot
+              namespaces:
+                users:
+                  - regex: '@discord_.*:localhost'
+                    exclusive: true
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /_conduwuit/admin/v1/appservices/{appserviceId}:
+    delete:
+      tags: [Appservices]
+      summary: 注销 Appservice
+      description: 等效命令: `!admin appservices unregister <name>`
+      parameters:
+        - name: appserviceId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: mautrix-discord
+      responses:
+        '200':
+          description: 注销成功
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # 服务器信息与操作
+  # ============================================================
+  /_conduwuit/admin/v1/server/info:
+    get:
+      tags: [Server]
+      summary: 获取服务器信息
+      description: 等效命令: `!admin server info`
+      responses:
+        '200':
+          description: 服务器信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+                  database_backend:
+                    type: string
+                  total_users:
+                    type: integer
+                  total_rooms:
+                    type: integer
+              example:
+                name: Conduwuit
+                version: "0.5.0"
+                database_backend: RocksDB
+                total_users: 12
+                total_rooms: 35
+
+  /_conduwuit/admin/v1/server/memory_usage:
+    get:
+      tags: [Server]
+      summary: 获取内存使用情况
+      description: 等效命令: `!admin server memory-usage`
+      responses:
+        '200':
+          description: 内存信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resident_set_size:
+                    type: integer
+                    description: RSS (字节)
+                  database_cache_size:
+                    type: integer
+
+  /_conduwuit/admin/v1/server/uptime:
+    get:
+      tags: [Server]
+      summary: 获取运行时间
+      description: 等效命令: `!admin server uptime`
+      responses:
+        '200':
+          description: 运行时间
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uptime_seconds:
+                    type: integer
+
+  # ============================================================
+  # 联邦调试
+  # ============================================================
+  /_conduwuit/admin/v1/federation/ping:
+    post:
+      tags: [Federation]
+      summary: Ping 远程服务器
+      description: |
+        等效命令: `!admin federation ping <server_name>`
+        测试与远程 homeserver 的联邦连接。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [server_name]
+              properties:
+                server_name:
+                  type: string
+            example:
+              server_name: "matrix.org"
+      responses:
+        '200':
+          description: Ping 结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  latency_ms:
+                    type: integer
+                  reachable:
+                    type: boolean
+
+  /_conduwuit/admin/v1/federation/signing_keys/{serverName}:
+    get:
+      tags: [Federation]
+      summary: 获取远程服务器签名密钥
+      description: 等效命令: `!admin federation signing-keys <server_name>`
+      parameters:
+        - name: serverName
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "matrix.org"
+      responses:
+        '200':
+          description: 签名密钥
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  # ============================================================
+  # 媒体管理
+  # ============================================================
+  /_conduwuit/admin/v1/media/purge:
+    post:
+      tags: [Media Management]
+      summary: 清理旧媒体
+      description: |
+        等效命令: `!admin media purge <days>`
+        删除超过指定天数未访问的缓存远程媒体。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                older_than_days:
+                  type: integer
+                  default: 30
+      responses:
+        '200':
+          description: 清理完成
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /_conduwuit/admin/v1/media/delete/{mxcUrl}:
+    delete:
+      tags: [Media Management]
+      summary: 删除指定媒体
+      description: 删除指定 mxc:// URI 对应的媒体文件。
+      parameters:
+        - name: mxcUrl
+          in: path
+          required: true
+          description: "mxc URL (URL-encoded, 例如 mxc%3A%2F%2Flocalhost%2Fabc123)"
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                type: object
+
 components:
   securitySchemes:
     bearerAuth:
@@ -276,15 +736,39 @@ components:
 
             **房间命令:**
             - `!admin rooms list`
+            - `!admin rooms alias list <room_id>` — 列出房间别名
+            - `!admin rooms alias set <room_alias> <room_id>` — 设置别名
+            - `!admin rooms alias remove <room_alias>` — 删除别名
+            - `!admin rooms directory publish <room_id>` — 公开房间
+            - `!admin rooms directory unpublish <room_id>` — 取消公开
 
             **用户命令:**
             - `!admin users list`
+            - `!admin users create <localpart> <password>` — 创建用户
+            - `!admin users deactivate <user_id>` — 停用用户
+            - `!admin users reset-password <user_id>` — 重置密码
+            - `!admin users make-admin <user_id>` — 授予管理员权限
+            - `!admin users unmake-admin <user_id>` — 撤销管理员权限
 
             **服务器命令:**
-            - `!admin server info`
+            - `!admin server info` — 服务器信息
+            - `!admin server uptime` — 运行时间
+            - `!admin server memory-usage` — 内存使用
+            - `!admin server clear-caches` — 清除缓存
+
+            **联邦命令:**
+            - `!admin federation ping <server_name>` — 测试联邦连接
+            - `!admin federation signing-keys <server_name>` — 获取签名密钥
+            - `!admin federation disable <server_name>` — 禁用联邦
+            - `!admin federation enable <server_name>` — 启用联邦
+
+            **媒体命令:**
+            - `!admin media purge <days>` — 清理超过 N 天的远程媒体
+            - `!admin media delete <mxc_url>` — 删除指定媒体
 
             **帮助:**
             - `!admin --help`
+            - `!admin <子命令> --help`
 
     AdminResponseEvent:
       type: object

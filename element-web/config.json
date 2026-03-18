@@ -23,7 +23,8 @@
         "servers": ["localhost"]
     },
     "setting_defaults": {
-        "breadcrumbs": true
+        "breadcrumbs": true,
+        "language": "zh-hans"
     },
     "features": {
         "feature_video_rooms": true,

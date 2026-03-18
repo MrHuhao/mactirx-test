@@ -316,6 +316,93 @@ paths:
   # ============================================================
   # WhatsApp endpoints
   # ============================================================
+  /_matrix/provision/v1/login/qr/whatsapp:
+    get:
+      tags: [WhatsApp]
+      summary: WhatsApp QR 码登录 (WebSocket)
+      description: |
+        通过 WebSocket 进行 WhatsApp QR 码扫描登录。
+        连接 `ws://localhost:29319/_matrix/provision/v1/login?user_id=@user:localhost`。
+
+        服务器依次发送:
+        1. `{"code": "2@xxx..."}` — QR 码内容 (每 20s 刷新)
+        2. `{"success": true, "jid": "123@s.whatsapp.net", "phone": "+1234567890"}` — 扫码成功
+
+        **注意:** 使用服务器地址端口 29319。请求时携带 provisioning secret Bearer token。
+      parameters:
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '101':
+          description: WebSocket 升级成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: QR 码内容
+                  timeout:
+                    type: integer
+              example:
+                code: "2@abcdef1234567890,1,0"
+                timeout: 20
+
+  /_matrix/provision/v1/login/whatsapp:
+    post:
+      tags: [WhatsApp]
+      summary: WhatsApp 手机号配对码登录
+      description: |
+        通过手机号码获取配对码以进行 WhatsApp 登录。
+        返回的 pairing code 需要在 WhatsApp 手机端 → 设置 → 关联设备 → 输入代码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, phone]
+              properties:
+                user_id:
+                  type: string
+                phone:
+                  type: string
+                  description: 国际格式手机号
+            example:
+              user_id: "@user:localhost"
+              phone: "+8613800138000"
+      responses:
+        '200':
+          description: 配对码
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pairing_code:
+                    type: string
+                    description: "8 位配对码 (格式: XXXX-XXXX)"
+              example:
+                pairing_code: "1234-5678"
+
+  /_matrix/provision/v1/logout/whatsapp:
+    post:
+      tags: [WhatsApp]
+      summary: WhatsApp 登出
+      description: 从 WhatsApp 登出。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
   /_matrix/provision/v1/contacts:
     get:
       tags: [WhatsApp]
@@ -442,6 +529,52 @@ paths:
   # ============================================================
   # Signal endpoints
   # ============================================================
+  /_matrix/provision/v1/login/qr/signal:
+    get:
+      tags: [Signal]
+      summary: Signal QR 码登录 (WebSocket)
+      description: |
+        通过 WebSocket 进行 Signal 扫码关联。
+        连接 `ws://localhost:29321/_matrix/provision/v1/link/new?user_id=@user:localhost`。
+
+        服务器发送:
+        1. `{"uri": "sgnl://linkdevice?uuid=...&pub_key=..."}` — QR 码 URI
+        2. `{"account_id": "uuid-...", "phone": "+1234567890"}` — 关联成功
+
+        **注意:** 使用服务器地址端口 29321。
+      parameters:
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '101':
+          description: WebSocket 升级成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uri:
+                    type: string
+                    description: Signal 关联设备 URI (用于生成 QR)
+              example:
+                uri: "sgnl://linkdevice?uuid=abcd-1234&pub_key=BXyz..."
+
+  /_matrix/provision/v1/logout/signal:
+    post:
+      tags: [Signal]
+      summary: Signal 登出
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
   /_matrix/provision/v2/resolve_identifier/{phonenum}:
     get:
       tags: [Signal]
@@ -581,6 +714,51 @@ paths:
   # ============================================================
   # Google Messages endpoints
   # ============================================================
+  /_matrix/provision/v1/login/qr/gmessages:
+    get:
+      tags: [Google Messages]
+      summary: Google Messages QR 码登录 (WebSocket)
+      description: |
+        通过 WebSocket 进行 Google Messages QR 码扫描配对。
+        连接 `ws://localhost:29322/_matrix/provision/v1/login?user_id=@user:localhost`。
+
+        服务器发送:
+        1. `{"url": "https://messages.google.com/web/authentication?..."}` — QR 码内容
+        2. `{"success": true, "phone": "+1234567890"}` — 配对成功
+
+        **注意:** 使用服务器地址端口 29322。用 Google Messages 手机端扫描。
+      parameters:
+        - $ref: '#/components/parameters/UserIdQuery'
+      responses:
+        '101':
+          description: WebSocket 升级成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+              example:
+                url: "https://messages.google.com/web/authentication?data=..."
+
+  /_matrix/provision/v1/logout/gmessages:
+    post:
+      tags: [Google Messages]
+      summary: Google Messages 登出
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserIdBody'
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+
   /_matrix/provision/v1/start_chat:
     post:
       tags: [Google Messages]

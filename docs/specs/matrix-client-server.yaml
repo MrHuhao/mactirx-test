@@ -16,18 +16,132 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: Discovery
+    description: 服务器发现与能力协商
   - name: Authentication
     description: 登录、注册与会话管理
   - name: Rooms
-    description: 房间操作
+    description: 房间创建、加入、离开、目录
+  - name: Room Membership
+    description: 邀请、踢出、封禁、查询成员
+  - name: Room State
+    description: 房间状态事件 (名称、话题、权限等)
   - name: Messages
-    description: 消息发送与读取
+    description: 消息发送、读取、撤回、搜索
+  - name: Read Markers & Receipts
+    description: 已读标记、回执与输入状态
   - name: Profile
     description: 用户资料
+  - name: Presence
+    description: 在线状态
+  - name: Account Data
+    description: 用户/房间级账户数据
+  - name: Devices
+    description: 设备管理
+  - name: E2EE Keys
+    description: 端到端加密密钥
+  - name: Push Notifications
+    description: 推送规则
   - name: Media
-    description: 媒体上传
+    description: 媒体上传与下载
 
 paths:
+  # ============================================================
+  # Discovery / Capabilities
+  # ============================================================
+  /_matrix/client/versions:
+    get:
+      tags: [Discovery]
+      summary: 获取支持的 API 版本
+      description: 返回 homeserver 支持的 Matrix 规范版本列表。无需认证。
+      security: []
+      responses:
+        '200':
+          description: 支持的版本列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  versions:
+                    type: array
+                    items:
+                      type: string
+                  unstable_features:
+                    type: object
+                    additionalProperties:
+                      type: boolean
+              example:
+                versions: ["v1.1", "v1.2", "v1.3", "v1.4", "v1.5", "v1.6", "v1.7", "v1.8", "v1.9", "v1.10", "v1.11"]
+                unstable_features:
+                  org.matrix.e2e_cross_signing: true
+
+  /_matrix/client/v3/capabilities:
+    get:
+      tags: [Discovery]
+      summary: 获取服务器能力
+      description: 返回 homeserver 支持的可选功能（如修改密码、房间版本等）。
+      responses:
+        '200':
+          description: 服务器能力
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      m.change_password:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                      m.room_versions:
+                        type: object
+                        properties:
+                          default:
+                            type: string
+                          available:
+                            type: object
+                            additionalProperties:
+                              type: string
+              example:
+                capabilities:
+                  m.change_password:
+                    enabled: true
+                  m.room_versions:
+                    default: "10"
+                    available:
+                      "10": stable
+                      "11": stable
+
+  /_matrix/client/v3/login:
+    get:
+      tags: [Authentication]
+      summary: 获取支持的登录类型
+      description: 返回 homeserver 支持的登录方式列表。无需认证。
+      security: []
+      responses:
+        '200':
+          description: 支持的登录类型
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+              example:
+                flows:
+                  - type: m.login.password
+                  - type: m.login.token
+
   /_matrix/client/v3/login:
     post:
       tags: [Authentication]
@@ -688,6 +802,1745 @@ paths:
                 errcode: M_TOO_LARGE
                 error: Content too large
 
+  # ============================================================
+  # Media Download
+  # ============================================================
+  /_matrix/media/v3/download/{serverName}/{mediaId}:
+    get:
+      tags: [Media]
+      summary: 下载媒体文件
+      description: 通过 mxc:// URI 下载媒体文件。mxc://server/mediaid → 此端点。
+      security: []
+      parameters:
+        - name: serverName
+          in: path
+          required: true
+          schema:
+            type: string
+          example: localhost
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: abc123def456
+        - name: allow_remote
+          in: query
+          description: 是否允许通过联邦下载远程文件
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: 文件内容
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 媒体不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/media/v3/thumbnail/{serverName}/{mediaId}:
+    get:
+      tags: [Media]
+      summary: 获取媒体缩略图
+      description: 获取指定媒体文件的缩略图。
+      security: []
+      parameters:
+        - name: serverName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: width
+          in: query
+          required: true
+          description: 期望宽度 (像素)
+          schema:
+            type: integer
+          example: 320
+        - name: height
+          in: query
+          required: true
+          description: 期望高度 (像素)
+          schema:
+            type: integer
+          example: 240
+        - name: method
+          in: query
+          description: 缩放方式
+          schema:
+            type: string
+            enum: [crop, scale]
+            default: scale
+      responses:
+        '200':
+          description: 缩略图内容
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 媒体不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/media/v3/config:
+    get:
+      tags: [Media]
+      summary: 获取媒体上传限制
+      description: 获取服务器允许的最大文件上传大小等配置。
+      responses:
+        '200':
+          description: 媒体配置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  m.upload.size:
+                    type: integer
+                    description: 最大上传大小 (字节)
+              example:
+                m.upload.size: 52428800
+
+  # ============================================================
+  # Room Membership
+  # ============================================================
+  /_matrix/client/v3/rooms/{roomId}/leave:
+    post:
+      tags: [Room Membership]
+      summary: 离开房间
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: 已离开
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/rooms/{roomId}/forget:
+    post:
+      tags: [Room Membership]
+      summary: 遗忘房间
+      description: 从已离开房间列表中彻底移除。必须先离开房间。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '200':
+          description: 已遗忘
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/rooms/{roomId}/invite:
+    post:
+      tags: [Room Membership]
+      summary: 邀请用户加入房间
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: string
+                  description: 被邀请用户的 Matrix ID
+                reason:
+                  type: string
+            example:
+              user_id: "@newuser:localhost"
+              reason: "欢迎加入"
+      responses:
+        '200':
+          description: 邀请成功
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          description: 无权邀请
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/rooms/{roomId}/kick:
+    post:
+      tags: [Room Membership]
+      summary: 踢出用户
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: string
+                reason:
+                  type: string
+            example:
+              user_id: "@baduser:localhost"
+              reason: "违反规则"
+      responses:
+        '200':
+          description: 踢出成功
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          description: 权限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/rooms/{roomId}/ban:
+    post:
+      tags: [Room Membership]
+      summary: 封禁用户
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: 封禁成功
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          description: 权限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/rooms/{roomId}/unban:
+    post:
+      tags: [Room Membership]
+      summary: 解除封禁
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: 解封成功
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/rooms/{roomId}/members:
+    get:
+      tags: [Room Membership]
+      summary: 获取房间成员列表
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: at
+          in: query
+          description: 从哪个时间点获取成员 (来自 /sync 的 batch token)
+          schema:
+            type: string
+        - name: membership
+          in: query
+          description: 按成员状态过滤
+          schema:
+            type: string
+            enum: [join, invite, leave, ban, knock]
+        - name: not_membership
+          in: query
+          description: 排除某种成员状态
+          schema:
+            type: string
+            enum: [join, invite, leave, ban, knock]
+      responses:
+        '200':
+          description: 成员列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chunk:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MatrixEvent'
+
+  /_matrix/client/v3/rooms/{roomId}/joined_members:
+    get:
+      tags: [Room Membership]
+      summary: 获取已加入成员 (简洁版)
+      description: 返回已加入成员的 user_id → display_name/avatar 映射，比 /members 更轻量。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '200':
+          description: 成员映射
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  joined:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        display_name:
+                          type: string
+                        avatar_url:
+                          type: string
+              example:
+                joined:
+                  "@admin:localhost":
+                    display_name: "Admin"
+                    avatar_url: "mxc://localhost/abc"
+
+  # ============================================================
+  # Room State
+  # ============================================================
+  /_matrix/client/v3/rooms/{roomId}/state:
+    get:
+      tags: [Room State]
+      summary: 获取房间全部状态
+      description: 返回房间当前的所有状态事件 (名称、话题、权限、加密等)。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        '200':
+          description: 状态事件数组
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MatrixEvent'
+
+  /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}:
+    get:
+      tags: [Room State]
+      summary: 获取特定状态事件
+      description: |
+        获取房间中指定类型和 stateKey 的状态事件内容。
+        常用类型: `m.room.name`, `m.room.topic`, `m.room.power_levels`,
+        `m.room.encryption`, `m.room.join_rules`, `m.room.avatar`
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: eventType
+          in: path
+          required: true
+          schema:
+            type: string
+          example: m.room.name
+        - name: stateKey
+          in: path
+          required: true
+          description: 状态键 (通常为空字符串)
+          schema:
+            type: string
+          example: ""
+      responses:
+        '200':
+          description: 状态事件内容
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+              example:
+                name: "测试房间"
+        '404':
+          description: 状态事件不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+    put:
+      tags: [Room State]
+      summary: 设置特定状态事件
+      description: |
+        设置房间状态事件。可用于修改房间名称、话题、权限、加入规则等。
+
+        **常用示例:**
+        - 修改房间名称: `PUT /state/m.room.name/` body: `{"name":"新名称"}`
+        - 修改话题: `PUT /state/m.room.topic/` body: `{"topic":"新话题"}`
+        - 修改权限: `PUT /state/m.room.power_levels/`
+        - 启用加密: `PUT /state/m.room.encryption/` body: `{"algorithm":"m.megolm.v1.aes-sha2"}`
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: eventType
+          in: path
+          required: true
+          schema:
+            type: string
+          example: m.room.name
+        - name: stateKey
+          in: path
+          required: true
+          schema:
+            type: string
+          example: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              setName:
+                summary: 修改房间名称
+                value:
+                  name: "新房间名称"
+              setTopic:
+                summary: 修改话题
+                value:
+                  topic: "新话题描述"
+              setPowerLevels:
+                summary: 修改权限
+                value:
+                  ban: 50
+                  kick: 50
+                  invite: 0
+                  redact: 50
+                  events_default: 0
+                  state_default: 50
+                  users_default: 0
+                  users:
+                    "@admin:localhost": 100
+              enableEncryption:
+                summary: 启用端到端加密
+                value:
+                  algorithm: m.megolm.v1.aes-sha2
+      responses:
+        '200':
+          description: 状态设置成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+        '403':
+          description: 权限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  # ============================================================
+  # Messages – Redact, Event, Context, Search
+  # ============================================================
+  /_matrix/client/v3/rooms/{roomId}/redact/{eventId}/{txnId}:
+    put:
+      tags: [Messages]
+      summary: 撤回/删除消息
+      description: 撤回 (redact) 房间中的一个事件。需要相应权限。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: eventId
+          in: path
+          required: true
+          description: 要撤回的事件 ID
+          schema:
+            type: string
+          example: "$eventid:localhost"
+        - name: txnId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "redact_001"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+            example:
+              reason: "发送错误"
+      responses:
+        '200':
+          description: 撤回成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+        '403':
+          description: 无权撤回
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/rooms/{roomId}/event/{eventId}:
+    get:
+      tags: [Messages]
+      summary: 获取单个事件
+      description: 根据事件 ID 获取事件的完整内容。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "$eventid:localhost"
+      responses:
+        '200':
+          description: 事件内容
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixEvent'
+        '404':
+          description: 事件不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+
+  /_matrix/client/v3/rooms/{roomId}/context/{eventId}:
+    get:
+      tags: [Messages]
+      summary: 获取事件上下文
+      description: 获取指定事件前后的消息 (用于消息跳转/引用定位)。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: 前后各返回的事件数
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: 事件上下文
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event:
+                    $ref: '#/components/schemas/MatrixEvent'
+                  events_before:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MatrixEvent'
+                  events_after:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MatrixEvent'
+                  start:
+                    type: string
+                  end:
+                    type: string
+                  state:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MatrixEvent'
+
+  /_matrix/client/v3/search:
+    post:
+      tags: [Messages]
+      summary: 搜索消息
+      description: 在已加入房间中搜索消息内容。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [search_categories]
+              properties:
+                search_categories:
+                  type: object
+                  properties:
+                    room_events:
+                      type: object
+                      required: [search_term]
+                      properties:
+                        search_term:
+                          type: string
+                        keys:
+                          type: array
+                          items:
+                            type: string
+                            enum: [content.body, content.name, content.topic]
+                        filter:
+                          type: object
+                          properties:
+                            rooms:
+                              type: array
+                              items:
+                                type: string
+                        order_by:
+                          type: string
+                          enum: [recent, rank]
+                        event_context:
+                          type: object
+                          properties:
+                            before_limit:
+                              type: integer
+                            after_limit:
+                              type: integer
+                            include_profile:
+                              type: boolean
+            example:
+              search_categories:
+                room_events:
+                  search_term: "hello"
+                  order_by: recent
+      responses:
+        '200':
+          description: 搜索结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  search_categories:
+                    type: object
+                    properties:
+                      room_events:
+                        type: object
+                        properties:
+                          count:
+                            type: integer
+                          results:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                rank:
+                                  type: number
+                                result:
+                                  $ref: '#/components/schemas/MatrixEvent'
+                          next_batch:
+                            type: string
+
+  # ============================================================
+  # Read Markers, Receipts, Typing
+  # ============================================================
+  /_matrix/client/v3/rooms/{roomId}/read_markers:
+    post:
+      tags: [Read Markers & Receipts]
+      summary: 设置已读标记
+      description: 更新房间的已读位置 (标记到哪条消息已读)。前端未读角标依赖此接口。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [m.fully_read]
+              properties:
+                m.fully_read:
+                  type: string
+                  description: 已读到的事件 ID (私有标记)
+                m.read:
+                  type: string
+                  description: 公开已读回执的事件 ID
+                m.read.private:
+                  type: string
+                  description: 私有已读回执的事件 ID
+            example:
+              m.fully_read: "$lastevent:localhost"
+              m.read: "$lastevent:localhost"
+      responses:
+        '200':
+          description: 已读标记更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/rooms/{roomId}/receipt/{receiptType}/{eventId}:
+    post:
+      tags: [Read Markers & Receipts]
+      summary: 发送回执
+      description: |
+        发送已读回执。receiptType 为 `m.read` (公开) 或 `m.read.private` (私有)。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: receiptType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [m.read, m.read.private, m.fully_read]
+          example: m.read
+        - name: eventId
+          in: path
+          required: true
+          description: 已读到的事件 ID
+          schema:
+            type: string
+          example: "$event:localhost"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                thread_id:
+                  type: string
+                  description: 线程 ID (如果是线程回执)
+      responses:
+        '200':
+          description: 回执已发送
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/rooms/{roomId}/typing/{userId}:
+    put:
+      tags: [Read Markers & Receipts]
+      summary: 设置输入状态
+      description: 通知房间内其他用户「正在输入」。
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: userId
+          in: path
+          required: true
+          description: 当前用户 Matrix ID
+          schema:
+            type: string
+          example: "@admin:localhost"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [typing]
+              properties:
+                typing:
+                  type: boolean
+                timeout:
+                  type: integer
+                  description: 输入状态过期毫秒数
+                  default: 30000
+            example:
+              typing: true
+              timeout: 30000
+      responses:
+        '200':
+          description: 状态已更新
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # Room Directory & Public Rooms
+  # ============================================================
+  /_matrix/client/v3/directory/room/{roomAlias}:
+    get:
+      tags: [Rooms]
+      summary: 通过别名查询房间
+      description: 根据房间别名 (如 `#test:localhost`) 获取房间 ID。
+      security: []
+      parameters:
+        - name: roomAlias
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "#test:localhost"
+      responses:
+        '200':
+          description: 房间信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+                  servers:
+                    type: array
+                    items:
+                      type: string
+              example:
+                room_id: "!roomid:localhost"
+                servers: ["localhost"]
+        '404':
+          description: 别名不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+    put:
+      tags: [Rooms]
+      summary: 创建房间别名
+      parameters:
+        - name: roomAlias
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "#myroom:localhost"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [room_id]
+              properties:
+                room_id:
+                  type: string
+            example:
+              room_id: "!roomid:localhost"
+      responses:
+        '200':
+          description: 别名创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      tags: [Rooms]
+      summary: 删除房间别名
+      parameters:
+        - name: roomAlias
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 别名已删除
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/publicRooms:
+    get:
+      tags: [Rooms]
+      summary: 获取公开房间列表
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: since
+          in: query
+          description: 分页 token
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 公开房间列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chunk:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicRoom'
+                  next_batch:
+                    type: string
+                  prev_batch:
+                    type: string
+                  total_room_count_estimate:
+                    type: integer
+    post:
+      tags: [Rooms]
+      summary: 搜索公开房间
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit:
+                  type: integer
+                since:
+                  type: string
+                filter:
+                  type: object
+                  properties:
+                    generic_search_term:
+                      type: string
+            example:
+              limit: 10
+              filter:
+                generic_search_term: "test"
+      responses:
+        '200':
+          description: 搜索结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chunk:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicRoom'
+                  total_room_count_estimate:
+                    type: integer
+
+  # ============================================================
+  # Presence
+  # ============================================================
+  /_matrix/client/v3/presence/{userId}/status:
+    get:
+      tags: [Presence]
+      summary: 获取用户在线状态
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "@admin:localhost"
+      responses:
+        '200':
+          description: 在线状态
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  presence:
+                    type: string
+                    enum: [online, offline, unavailable]
+                  last_active_ago:
+                    type: integer
+                    description: 上次活跃距今毫秒数
+                  status_msg:
+                    type: string
+                  currently_active:
+                    type: boolean
+              example:
+                presence: online
+                currently_active: true
+    put:
+      tags: [Presence]
+      summary: 设置在线状态
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [presence]
+              properties:
+                presence:
+                  type: string
+                  enum: [online, offline, unavailable]
+                status_msg:
+                  type: string
+            example:
+              presence: online
+              status_msg: "工作中"
+      responses:
+        '200':
+          description: 状态已更新
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # Account Data
+  # ============================================================
+  /_matrix/client/v3/user/{userId}/account_data/{type}:
+    get:
+      tags: [Account Data]
+      summary: 获取全局账户数据
+      description: |
+        获取用户级别的账户数据。常用类型:
+        - `m.direct` — 私聊房间映射
+        - `m.push_rules` — 推送规则
+        - `im.vector.setting.*` — Element 设置
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+          example: m.direct
+      responses:
+        '200':
+          description: 账户数据内容
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: 数据不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixError'
+    put:
+      tags: [Account Data]
+      summary: 设置全局账户数据
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 设置成功
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/user/{userId}/rooms/{roomId}/account_data/{type}:
+    get:
+      tags: [Account Data]
+      summary: 获取房间级账户数据
+      description: |
+        获取用户在指定房间内的账户数据。常用类型:
+        - `m.fully_read` — 已读标记
+        - `m.tag` — 房间标签 (收藏/低优先级)
+        - `org.matrix.msc3381.poll.response` — 投票回复
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+          example: m.tag
+      responses:
+        '200':
+          description: 房间级账户数据
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    put:
+      tags: [Account Data]
+      summary: 设置房间级账户数据
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 设置成功
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # Devices
+  # ============================================================
+  /_matrix/client/v3/devices:
+    get:
+      tags: [Devices]
+      summary: 获取所有设备
+      description: 返回当前用户的所有已登录设备列表。
+      responses:
+        '200':
+          description: 设备列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+
+  /_matrix/client/v3/devices/{deviceId}:
+    get:
+      tags: [Devices]
+      summary: 获取单个设备信息
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 设备信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+    put:
+      tags: [Devices]
+      summary: 更新设备显示名称
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+            example:
+              display_name: "我的MacBook"
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      tags: [Devices]
+      summary: 删除设备 (需要 UIA)
+      description: 删除指定设备并使其 access_token 失效。需要交互式认证。
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auth:
+                  type: object
+                  description: UIA 认证数据
+                  properties:
+                    type:
+                      type: string
+                    password:
+                      type: string
+                    session:
+                      type: string
+      responses:
+        '200':
+          description: 设备已删除
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: 需要交互式认证
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    type: string
+                  flows:
+                    type: array
+                    items:
+                      type: object
+
+  /_matrix/client/v3/delete_devices:
+    post:
+      tags: [Devices]
+      summary: 批量删除设备
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [devices]
+              properties:
+                devices:
+                  type: array
+                  items:
+                    type: string
+                auth:
+                  type: object
+            example:
+              devices: ["DEVICE1", "DEVICE2"]
+      responses:
+        '200':
+          description: 设备已删除
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # E2EE Keys
+  # ============================================================
+  /_matrix/client/v3/keys/upload:
+    post:
+      tags: [E2EE Keys]
+      summary: 上传设备密钥
+      description: 上传当前设备的 E2EE 公钥和一次性密钥。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_keys:
+                  type: object
+                  description: 设备公钥
+                  properties:
+                    user_id:
+                      type: string
+                    device_id:
+                      type: string
+                    algorithms:
+                      type: array
+                      items:
+                        type: string
+                    keys:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    signatures:
+                      type: object
+                one_time_keys:
+                  type: object
+                  additionalProperties:
+                    type: object
+                  description: 一次性密钥 (key_id → key_data)
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  one_time_key_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    description: 服务器上各类型一次性密钥的剩余数量
+              example:
+                one_time_key_counts:
+                  signed_curve25519: 42
+
+  /_matrix/client/v3/keys/query:
+    post:
+      tags: [E2EE Keys]
+      summary: 查询用户设备密钥
+      description: 查询指定用户的所有设备公钥 (用于建立加密会话)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_keys]
+              properties:
+                device_keys:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items:
+                      type: string
+                  description: 'user_id → device_id 列表 (空数组=所有设备)'
+                timeout:
+                  type: integer
+            example:
+              device_keys:
+                "@alice:localhost": []
+      responses:
+        '200':
+          description: 设备密钥
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_keys:
+                    type: object
+                    additionalProperties:
+                      type: object
+                  failures:
+                    type: object
+
+  /_matrix/client/v3/keys/claim:
+    post:
+      tags: [E2EE Keys]
+      summary: 领取一次性密钥
+      description: 领取其他用户设备的一次性密钥 (用于 Olm 会话建立)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [one_time_keys]
+              properties:
+                one_time_keys:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  description: 'user_id → {device_id → algorithm}'
+                timeout:
+                  type: integer
+            example:
+              one_time_keys:
+                "@alice:localhost":
+                  "DEVICEID": "signed_curve25519"
+      responses:
+        '200':
+          description: 领取的密钥
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  one_time_keys:
+                    type: object
+                  failures:
+                    type: object
+
+  /_matrix/client/v3/keys/changes:
+    get:
+      tags: [E2EE Keys]
+      summary: 密钥变更通知
+      description: 获取在两次 /sync 之间哪些用户的设备密钥发生了变化。
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: 起始 sync token
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: 结束 sync token
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 变更的用户列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changed:
+                    type: array
+                    items:
+                      type: string
+                  left:
+                    type: array
+                    items:
+                      type: string
+
+  # ============================================================
+  # Push Notifications
+  # ============================================================
+  /_matrix/client/v3/pushrules/:
+    get:
+      tags: [Push Notifications]
+      summary: 获取所有推送规则
+      responses:
+        '200':
+          description: 推送规则
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  global:
+                    type: object
+                    properties:
+                      override:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PushRule'
+                      content:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PushRule'
+                      room:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PushRule'
+                      sender:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PushRule'
+                      underride:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PushRule'
+
+  /_matrix/client/v3/notifications:
+    get:
+      tags: [Push Notifications]
+      summary: 获取通知列表
+      description: 获取当前用户收到的通知事件。
+      parameters:
+        - name: from
+          in: query
+          description: 分页 token
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: only
+          in: query
+          description: 只返回指定类型的通知 (如 highlight)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 通知列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        actions:
+                          type: array
+                          items: {}
+                        event:
+                          $ref: '#/components/schemas/MatrixEvent'
+                        read:
+                          type: boolean
+                        room_id:
+                          type: string
+                        ts:
+                          type: integer
+                  next_token:
+                    type: string
+
+  # ============================================================
+  # Filters
+  # ============================================================
+  /_matrix/client/v3/user/{userId}/filter:
+    post:
+      tags: [Messages]
+      summary: 创建过滤器
+      description: 创建事件过滤器，返回 filter_id 供 /sync 使用。
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                room:
+                  type: object
+                  properties:
+                    rooms:
+                      type: array
+                      items:
+                        type: string
+                    timeline:
+                      type: object
+                      properties:
+                        limit:
+                          type: integer
+                        types:
+                          type: array
+                          items:
+                            type: string
+                    state:
+                      type: object
+                      properties:
+                        lazy_load_members:
+                          type: boolean
+                presence:
+                  type: object
+                  properties:
+                    types:
+                      type: array
+                      items:
+                        type: string
+            example:
+              room:
+                timeline:
+                  limit: 20
+                state:
+                  lazy_load_members: true
+      responses:
+        '200':
+          description: 过滤器已创建
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filter_id:
+                    type: string
+              example:
+                filter_id: "123"
+
+  /_matrix/client/v3/user/{userId}/filter/{filterId}:
+    get:
+      tags: [Messages]
+      summary: 获取过滤器定义
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 过滤器内容
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  # ============================================================
+  # Logout all, Password change
+  # ============================================================
+  /_matrix/client/v3/logout/all:
+    post:
+      tags: [Authentication]
+      summary: 登出所有设备
+      description: 使当前用户的所有 access_token 失效。
+      responses:
+        '200':
+          description: 所有设备已登出
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/account/password:
+    post:
+      tags: [Authentication]
+      summary: 修改密码
+      description: 修改当前用户密码。需要 UIA 或旧密码认证。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+                logout_devices:
+                  type: boolean
+                  default: true
+                  description: 修改后是否登出其他设备
+                auth:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    password:
+                      type: string
+                    session:
+                      type: string
+      responses:
+        '200':
+          description: 密码修改成功
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: 需要 UIA 认证
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================
+  # TURN server (VoIP)
+  # ============================================================
+  /_matrix/client/v3/voip/turnServer:
+    get:
+      tags: [Discovery]
+      summary: 获取 TURN 服务器凭证
+      description: 获取 VoIP 通话所需的 TURN 服务器地址和临时凭证。
+      responses:
+        '200':
+          description: TURN 凭证
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                  password:
+                    type: string
+                  uris:
+                    type: array
+                    items:
+                      type: string
+                  ttl:
+                    type: integer
+              example:
+                username: "1234567890:@admin:localhost"
+                password: "temp_password"
+                uris: ["turn:turn.example.com:3478?transport=udp"]
+                ttl: 86400
+
 components:
   securitySchemes:
     bearerAuth:
@@ -696,6 +2549,16 @@ components:
       description: |
         使用 /login 获取的 access_token。
         格式: `Authorization: Bearer <access_token>`
+
+  parameters:
+    RoomId:
+      name: roomId
+      in: path
+      required: true
+      description: 房间 ID
+      schema:
+        type: string
+      example: "!roomid:localhost"
 
   schemas:
     LoginResponse:
@@ -802,3 +2665,69 @@ components:
               type: integer
             notification_count:
               type: integer
+
+    PublicRoom:
+      type: object
+      properties:
+        room_id:
+          type: string
+        name:
+          type: string
+        topic:
+          type: string
+        num_joined_members:
+          type: integer
+        avatar_url:
+          type: string
+        world_readable:
+          type: boolean
+        guest_can_join:
+          type: boolean
+        canonical_alias:
+          type: string
+        join_rule:
+          type: string
+
+    Device:
+      type: object
+      properties:
+        device_id:
+          type: string
+        display_name:
+          type: string
+        last_seen_ip:
+          type: string
+        last_seen_ts:
+          type: integer
+          format: int64
+      example:
+        device_id: "ABCDEFGHIJ"
+        display_name: "我的MacBook"
+        last_seen_ip: "127.0.0.1"
+        last_seen_ts: 1710000000000
+
+    PushRule:
+      type: object
+      properties:
+        rule_id:
+          type: string
+        default:
+          type: boolean
+        enabled:
+          type: boolean
+        conditions:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+              key:
+                type: string
+              pattern:
+                type: string
+        actions:
+          type: array
+          items: {}
+        pattern:
+          type: string
